@@ -1,0 +1,39 @@
+ENVIRONMENT {
+    width: 10,
+    height: 10,
+    steps: 1,
+    visualize: true
+}
+
+SPECIES {
+    tester {
+        color: random(0, 255)
+    }
+}
+
+SPAWN {
+    spawn tester @ (5, 5);
+}
+
+FITNESS {
+    return self.color;
+}
+
+MUTATE {
+    mutation: {
+        self.color = self.color + random(0, 21) - 10;
+        if (self.color < 0) { self.color = 0; }
+        if (self.color > 255) { self.color = 255; }
+    }
+}
+
+VISUALIZE {
+    for cell in environment {
+        draw_rect(100, 100, 400, 400, cell.color, 100, 100);
+    }
+}
+
+EVOLVE {
+    generations: 100,
+    instances: 10
+}

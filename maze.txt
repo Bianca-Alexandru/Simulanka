@@ -1,0 +1,278 @@
+ENVIRONMENT {
+    width: 21
+    height: 21
+    steps: 1
+    visualize: true
+}
+
+SPECIES {
+    ROUTINE connect_logic() {
+        i = 0;
+        while (i < 4) {
+            if (self.genes[i] > 50) {
+                self.connected[i] = 1;
+            } else {
+                self.connected[i] = 0;
+            }
+            i = i + 1;
+        }
+    }
+    routine test (){}
+    mazecell {
+        // Genes represent walls to [Up, Down, Left, Right]
+        genes: [random(0, 50), random(0, 50), random(0, 50), random(0, 50)],
+        connected: [0, 0, 0, 0],
+        visited: 0,
+        dist: 0,
+        parent_x: 0,
+        parent_y: 0,
+        is_path: 0,
+        routine: connect_logic
+    }
+}
+
+SPAWN {
+    i = 0;
+    while (i < 21) {
+        j = 0;
+        while (j < 21) {
+            spawn mazecell @ (i, j);
+            j = j + 1;
+        }
+        i = i + 1;
+    }
+}
+
+FITNESS {
+    // We use the individual at (0,0) to run the global maze check
+    if (self.x == 0) {
+        if (self.y == 0) {
+            for cell in environment {
+                cell.visited = 0;
+                cell.is_path = 0;
+                cell.dist = 0;
+            }
+            
+            // BFS QUEUE
+            queue = [];
+            start_face = get_at(0, 0);
+            push(queue, start_face);
+            start_face.visited = 1;
+            start_face.dist = 0;
+            
+            head = 0;
+            
+            max_d = 0;
+            reached_goal = 0;
+            min_dist_to_goal = 100;
+            
+            while (head < len(queue)) {
+                curr = queue[head];
+                head = head + 1; // head effectively counts "Total Reachable Cells"
+
+                dx = 19 - curr.x;
+                dy = 19 - curr.y;
+                if (dx < 0) { dx = 0 - dx; }
+                if (dy < 0) { dy = 0 - dy; }
+                d_to_g = dx + dy;
+                if (d_to_g < min_dist_to_goal) {
+                    min_dist_to_goal = d_to_g;
+                }
+
+                if (curr.x == 19) {
+                    if (curr.y == 19) {
+                        reached_goal = 1;
+                        max_d = curr.dist; 
+                    }
+                }
+                
+                k = 0;
+                while (k < 4) {
+                    nx = curr.x;
+                    ny = curr.y;
+                    if (k == 0) { ny = ny - 1; } // Up
+                    if (k == 1) { ny = ny + 1; } // Down
+                    if (k == 2) { nx = nx - 1; } // Left
+                    if (k == 3) { nx = nx + 1; } // Right
+                    
+                    if (nx > 0 - 1) {
+                        if (nx < 20) {
+                            if (ny > 0 - 1) {
+                                if (ny < 20) {
+                                    next = get_at(nx, ny);
+                                    if (next.visited == 0) {
+                                        blocked = 0;
+                                        if (k == 0) { 
+                                            v1 = get_at(curr.x, curr.y);
+                                            v2 = get_at(curr.x + 1, curr.y);
+                                            if (v1.connected[3] == 1 || v2.connected[2] == 1) { blocked = 1; }
+                                        }
+                                        if (k == 1) { 
+                                            v1 = get_at(curr.x, curr.y + 1);
+                                            v2 = get_at(curr.x + 1, curr.y + 1);
+                                            if (v1.connected[3] == 1 || v2.connected[2] == 1) { blocked = 1; }
+                                        }
+                                        if (k == 2) { 
+                                            v1 = get_at(curr.x, curr.y);
+                                            v2 = get_at(curr.x, curr.y + 1);
+                                            if (v1.connected[1] == 1 || v2.connected[0] == 1) { blocked = 1; }
+                                        }
+                                        if (k == 3) { 
+                                            v1 = get_at(curr.x + 1, curr.y);
+                                            v2 = get_at(curr.x + 1, curr.y + 1);
+                                            if (v1.connected[1] == 1 || v2.connected[0] == 1) { blocked = 1; }
+                                        }
+                                        
+                                        if (blocked == 0) {
+                                            next.visited = 1;
+                                            next.dist = curr.dist + 1;
+                                            next.parent_x = curr.x;
+                                            next.parent_y = curr.y;
+                                            push(queue, next);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    k = k + 1;
+                }
+            }
+            
+            // --- NEW METRIC: REACHABLE CELLS ---
+            reachable = head; // 'head' stops at the number of items we visited
+
+            // Only count walls if solved (as before)
+            total_walls = 0;
+            
+            if (reached_goal == 0) {
+                // If blocked, reward getting close AND exploring more cells (reachable)
+                // This encourages "opening up" dead ends.
+                score = (40 - min_dist_to_goal) * 100 + (reachable * 10);
+                return score;
+            } 
+            
+            if (reached_goal == 1) {
+                // Count walls to reward complexity
+                for c in environment {
+                    w = 0;
+                    while (w < 4) {
+                        if (c.connected[w] == 1) { total_walls = total_walls + 1; }
+                        w = w + 1;
+                    }
+                }
+                
+                // Add reachable * 10 to the final score
+                score = 100000 + (max_d * max_d * 10) + (total_walls * 1) + (reachable * 500);
+
+                // Mark path
+                temp = get_at(19, 19);
+                while (temp != 0) {
+                    temp.is_path = 1;
+                    if (temp.x == 0 && temp.y == 0) { temp = 0; }
+                    else { temp = get_at(temp.parent_x, temp.parent_y); }
+                }
+                return score;
+            }
+        }
+    }
+    return 0;
+}
+
+MUTATE {
+    crossover: {
+        i = 0;
+        while (i < 4) {
+            if (random(0, 2) == 0) {
+                child.genes[i] = parent1.genes[i];
+            } else {
+                child.genes[i] = parent2.genes[i];
+            }
+            i = i + 1;
+        }
+    }
+    
+    mutation: {
+        if (random(0, 100) < 10) { 
+            idx = random(0, 4);
+            if (random(0, 100) < 20) {
+                self.genes[idx] = random(0, 101);
+            } else {
+                self.genes[idx] = self.genes[idx] + random(0, 41) - 20;
+            }
+            
+            if (self.genes[idx] < 0) { self.genes[idx] = 0; }
+            if (self.genes[idx] > 100) { self.genes[idx] = 100; }
+        }
+    }
+}
+
+VISUALIZE {
+    cell_size = 600 / 20;
+    
+    draw_line(0, 0, 600, 0, 255, 255, 255, 4);
+    draw_line(600, 0, 600, 600, 255, 255, 255, 4);
+    draw_line(600, 600, 0, 600, 255, 255, 255, 4);
+    draw_line(0, 600, 0, 0, 255, 255, 255, 4);
+
+    for cell in environment {
+        vx = cell.x * cell_size;
+        vy = cell.y * cell_size;
+        
+        draw_circle(vx, vy, 2, 50, 50, 255);
+        
+        k = 0;
+        while (k < 4) {
+            nx = cell.x;
+            ny = cell.y;
+            if (k == 0) { ny = ny - 1; }
+            if (k == 1) { ny = ny + 1; }
+            if (k == 2) { nx = nx - 1; }
+            if (k == 3) { nx = nx + 1; }
+            
+            next = get_at(nx, ny);
+            has_wall = 0;
+            if (cell.connected[k] == 1) { has_wall = 1; }
+            if (next != 0) {
+                opp = 0;
+                if (k == 0) { opp = 1; }
+                if (k == 1) { opp = 0; }
+                if (k == 2) { opp = 3; }
+                if (k == 3) { opp = 2; }
+                if (next.connected[opp] == 1) { has_wall = 1; }
+            }
+
+            if (has_wall == 1) {
+                if (next != 0) {
+                    nvx = next.x * cell_size;
+                    nvy = next.y * cell_size;
+                    draw_line(vx, vy, nvx, nvy, 255, 255, 0, 2);
+                }
+            }
+            k = k + 1;
+        }
+        
+        if (cell.is_path == 1) {
+            cx = cell.x * cell_size + cell_size / 2;
+            cy = cell.y * cell_size + cell_size / 2;
+            px = cell.parent_x * cell_size + cell_size / 2;
+            py = cell.parent_y * cell_size + cell_size / 2;
+            if (cell.x == 0 && cell.y == 0) {
+            } else {
+                draw_line(cx, cy, px, py, 255, 0, 0, 5); 
+            }
+        }
+
+        if (cell.x == 0 && cell.y == 0) {
+            draw_circle(cell.x * cell_size + cell_size / 2, cell.y * cell_size + cell_size / 2, cell_size * 0.3, 0, 255, 0);
+        }
+        if (cell.x == 19 && cell.y == 19) {
+            draw_circle(cell.x * cell_size + cell_size / 2, cell.y * cell_size + cell_size / 2, cell_size * 0.3, 255, 0, 0);
+        }
+    }
+}
+
+EVOLVE {
+    generations: 1000,
+    instances: 30
+}
