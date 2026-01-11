@@ -1,0 +1,125 @@
+//color field generator -- generates a sort of noise that works as an overlay
+//
+//rules:
+//1. each species is a 'pixel' with r, g, b values.
+//2. the environment starts with a uniform grey color.
+//3. fitness is higher when pixels are similar to their immediate neighbors.
+//4. mutations are small, ensuring colors only evolve "little by little".
+
+ENVIRONMENT {
+    width: 20,
+    height: 20,
+    steps: 1
+}
+
+SPECIES {
+    //a single color cell
+    Pixel {
+        r: 120,
+        g: 120,
+        b: 120
+    }
+
+    //a controller species to calculate the collective fitness of the whole image
+    Controller {
+        dummy: 0
+    }
+}
+
+SPAWN {
+    //spawn the global fitness evaluator
+    spawn Controller @ (-1, -1);
+
+    //fill the 20x20 grid with pixels
+    y = 0;
+    while (y < 20) {
+        x = 0;
+        while (x < 20) {
+            spawn Pixel @ (x, y);
+            x = x + 1;
+        }
+        y = y + 1;
+    }
+}
+
+FITNESS {
+    //only the controller calculates the world-level fitness score.
+    //individually, pixels don't contribute to the max selection.
+    if (self.species == "Pixel") {
+        return 0;
+    }
+
+    total_dissimilarity = 0;
+    
+    //iterate through all pixels and penalize color differences with neighbors
+    for p in environment {
+        if (p.species == "Pixel") {
+            //we check only right and down neighbors to efficiently cover all edges without double-counting
+            right = get_at(p.x + 1, p.y);
+            down = get_at(p.x, p.y + 1);
+
+            if (right != 0) {
+                dr = p.r - right.r; if (dr < 0) { dr = 0 - dr; }
+                dg = p.g - right.g; if (dg < 0) { dg = 0 - dg; }
+                db = p.b - right.b; if (db < 0) { db = 0 - db; }
+                total_dissimilarity = total_dissimilarity + dr + dg + db;
+            }
+
+            if (down != 0) {
+                dr = p.r - down.r; if (dr < 0) { dr = 0 - dr; }
+                dg = p.g - down.g; if (dg < 0) { dg = 0 - dg; }
+                db = p.b - down.b; if (db < 0) { db = 0 - db; }
+                total_dissimilarity = total_dissimilarity + dr + dg + db;
+            }
+        }
+    }
+
+    return 1000000 - total_dissimilarity;
+}
+
+MUTATE {
+    mutation: {
+        if (self.species == "Pixel") {
+            //evolve "little by little": 10% chance to shift colors by a tiny amount
+            chance = random(0, 100);
+            if (chance < 10) {
+                self.r = self.r + random(-4, 5);
+                self.g = self.g + random(-4, 5);
+                self.b = self.b + random(-4, 5);
+
+                //clamp to valid 0-255 range
+                if (self.r < 0) { self.r = 0; }
+                if (self.r > 255) { self.r = 255; }
+                if (self.g < 0) { self.g = 0; }
+                if (self.g > 255) { self.g = 255; }
+                if (self.b < 0) { self.b = 0; }
+                if (self.b > 255) { self.b = 255; }
+            }
+        }
+    },
+
+    crossover: {
+        if (child.species == "Pixel") {
+            //averaging parent colors creates smoother transitions in offspring
+            child.r = (parent1.r + parent2.r) / 2;
+            child.g = (parent1.g + parent2.g) / 2;
+            child.b = (parent1.b + parent2.b) / 2;
+        }
+    }
+}
+
+EVOLVE {
+    generations: 500,
+    instances: 50
+}
+
+VISUALIZE {
+    //scale everything to fit the 600px canvas
+    sz = 600 / 20;
+
+    for p in environment {
+        if (p.species == "Pixel") {
+            draw_rect(p.x * sz, p.y * sz, sz, sz, p.r, p.g, p.b);
+        }
+    }
+}

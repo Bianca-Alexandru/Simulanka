@@ -1,0 +1,33 @@
+ENVIRONMENT {
+    width: 20, height: 20, steps: 5
+}
+
+SPECIES {
+    Agent {
+        power: random(0, 5),
+        routine: train
+    }
+    
+    ROUTINE train {
+        self.power = self.power + 1;
+    }
+}
+
+SPAWN {
+    spawn Agent @ (10, 10);
+    spawn Agent @ (0,0);
+}
+
+FITNESS {
+    return self.power;
+}
+
+MUTATE {
+    mutation: {
+        self.power = self.power + random(0, 3);
+    }
+}
+
+EVOLVE {
+    generations: 100, instances: 10
+}

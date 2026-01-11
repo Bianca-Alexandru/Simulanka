@@ -1,0 +1,213 @@
+// wolf pack hunting simulation
+// goal: wolves hunt sheep, sheep evade.
+// when wolf catches sheep, sheep respawns at a random edge -- no animals were harmed in the running of this code
+// genes control initial spawn positions and behavior.
+
+ENVIRONMENT {
+    width: 30
+    height: 30
+    steps: 80
+}
+
+SPECIES {
+    ROUTINE sheep_step {
+        // check if caught by wolf - if so, "respawn" at random edge
+        for wolf in environment {
+            if (wolf.is_wolf == 1) {
+                dx = self.x - wolf.x; if (dx < 0) { dx = 0 - dx; }
+                dy = self.y - wolf.y; if (dy < 0) { dy = 0 - dy; }
+                if (dx <= 1 && dy <= 1) {
+                    // caught! respawn at random edge
+                    self.times_caught = self.times_caught + 1;
+                    edge = random(0, 4);
+                    if (edge == 0) { self.x = 0; self.y = random(0, 30); }
+                    if (edge == 1) { self.x = 29; self.y = random(0, 30); }
+                    if (edge == 2) { self.x = random(0, 30); self.y = 0; }
+                    if (edge == 3) { self.x = random(0, 30); self.y = 29; }
+                }
+            }
+        }
+        
+        // find nearest wolf and run away
+        min_dist = 999;
+        wolf_dx = 0;
+        wolf_dy = 0;
+        
+        for other in environment {
+            if (other.is_wolf == 1) {
+                dx = self.x - other.x;
+                dy = self.y - other.y;
+                
+                adx = dx; if (adx < 0) { adx = 0 - adx; }
+                ady = dy; if (ady < 0) { ady = 0 - ady; }
+                dist = adx + ady;
+                
+                if (dist < min_dist) {
+                    min_dist = dist;
+                    wolf_dx = dx;
+                    wolf_dy = dy;
+                }
+            }
+        }
+        
+        // run if wolf is close (sheep are fast when scared!)
+        if (min_dist < 12) {
+            // sprint away - move 2 cells
+            if (wolf_dx > 0) { self.x = self.x + 2; }
+            if (wolf_dx < 0) { self.x = self.x - 2; }
+            if (wolf_dy > 0) { self.y = self.y + 2; }
+            if (wolf_dy < 0) { self.y = self.y - 2; }
+        } else {
+            // random grazing movement when safe
+            self.x = self.x + random(0, 3) - 1;
+            self.y = self.y + random(0, 3) - 1;
+        }
+        
+        // bounds with wrapping
+        if (self.x < 0) { self.x = 29; }
+        if (self.x > 29) { self.x = 0; }
+        if (self.y < 0) { self.y = 29; }
+        if (self.y > 29) { self.y = 0; }
+    }
+    
+    ROUTINE wolf_step {
+        // find nearest sheep and chase
+        min_dist = 999;
+        target_x = 15;
+        target_y = 15;
+        
+        for other in environment {
+            if (other.is_wolf == 0) {
+                dx = self.x - other.x;
+                dy = self.y - other.y;
+                adx = dx; if (adx < 0) { adx = 0 - adx; }
+                ady = dy; if (ady < 0) { ady = 0 - ady; }
+                dist = adx + ady;
+                
+                if (dist < min_dist) {
+                    min_dist = dist;
+                    target_x = other.x;
+                    target_y = other.y;
+                }
+            }
+        }
+        
+        // chase (wolves are slightly faster)
+        if (target_x > self.x) { self.x = self.x + 1; }
+        if (target_x < self.x) { self.x = self.x - 1; }
+        if (target_y > self.y) { self.y = self.y + 1; }
+        if (target_y < self.y) { self.y = self.y - 1; }
+        
+        // small random factor
+        if (random(0, 100) < 20) {
+            self.x = self.x + random(0, 3) - 1;
+            self.y = self.y + random(0, 3) - 1;
+        }
+        
+        // bounds with wrapping
+        if (self.x < 0) { self.x = 29; }
+        if (self.x > 29) { self.x = 0; }
+        if (self.y < 0) { self.y = 29; }
+        if (self.y > 29) { self.y = 0; }
+    }
+    
+    Sheep {
+        spawn_x: random(0, 30),
+        spawn_y: random(0, 30),
+        is_wolf: 0,
+        times_caught: 0,
+        routine: sheep_step
+    }
+    
+    Wolf {
+        spawn_x: random(0, 30),
+        spawn_y: random(0, 30),
+        is_wolf: 1,
+        routine: wolf_step
+    }
+}
+
+SPAWN {
+    // 12 Sheep - positions come from genes
+    spawn Sheep @ (5, 5);   spawn Sheep @ (25, 5);
+    spawn Sheep @ (5, 25);  spawn Sheep @ (25, 25);
+    spawn Sheep @ (15, 5);  spawn Sheep @ (15, 25);
+    spawn Sheep @ (5, 15);  spawn Sheep @ (25, 15);
+    spawn Sheep @ (10, 10); spawn Sheep @ (20, 10);
+    spawn Sheep @ (10, 20); spawn Sheep @ (20, 20);
+
+    // 4 Wolves - start at corners
+    spawn Wolf @ (0, 0);   spawn Wolf @ (29, 29);
+    spawn Wolf @ (0, 29);  spawn Wolf @ (29, 0);
+}
+
+FITNESS {
+    // count each type and track catches
+    sheep_count = 0;
+    wolf_count = 0;
+    total_catches = 0;
+    
+    for ent in environment {
+        if (ent.is_wolf == 0) {
+            sheep_count = sheep_count + 1;
+            total_catches = total_catches + ent.times_caught;
+        } else {
+            wolf_count = wolf_count + 1;
+        }
+    }
+    
+    score = 0;
+    
+    // reward for successful hunts (wolves catching sheep)
+    score = score + total_catches * 300;
+    
+    // reward for having both species present
+    score = score + sheep_count * 50;
+    score = score + wolf_count * 100;
+    
+    // bonus for active simulation (some catches happened)
+    if (total_catches > 5) {
+        score = score + 500;
+    }
+    if (total_catches > 10) {
+        score = score + 1000;
+    }
+    
+    return score;
+}
+
+MUTATE {
+    mutation: {
+        // mutate spawn positions
+        self.spawn_x = self.spawn_x + random(0, 7) - 3;
+        self.spawn_y = self.spawn_y + random(0, 7) - 3;
+        if (self.spawn_x < 0) { self.spawn_x = 0; }
+        if (self.spawn_x > 29) { self.spawn_x = 29; }
+        if (self.spawn_y < 0) { self.spawn_y = 0; }
+        if (self.spawn_y > 29) { self.spawn_y = 29; }
+    }
+}
+
+VISUALIZE {
+    cell = 20; // 30 * 20 = 600
+    
+    // grass background
+    draw_rect(0, 0, 600, 600, 34, 139, 34);
+    
+    for ent in environment {
+        px = ent.x * cell;
+        py = ent.y * cell;
+        if (ent.is_wolf == 1) {
+            // wolf: red circle
+            draw_circle(px + 10, py + 10, 9, 200, 30, 30);
+        } else {
+            // sheep: white fluffy circle
+            draw_circle(px + 10, py + 10, 8, 255, 255, 255);
+        }
+    }
+}
+
+EVOLVE {
+    generations: 100,
+    instances: 20
+}

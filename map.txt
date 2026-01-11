@@ -1,0 +1,212 @@
+//starts with all grass -> evolves into map
+//species is really simple most of the heavy lifting is done by fitness
+// terrain types: 0=deep water, 1=shallow water, 2=sand, 3=grass, 4=forest, 5=hills, 6=mountains
+
+ENVIRONMENT {
+    width: 1,
+    height: 1,
+    steps: 1
+}
+
+SPECIES {
+    ROUTINE do_nothing {}
+
+    TerrainMap {
+        genes: [],
+        routine: do_nothing
+    }
+}
+
+SPAWN {
+    spawn TerrainMap @ (0, 0);
+}
+
+FITNESS {
+    // initialize genes to all grass 
+    if (len(self.genes) == 0) {
+        i = 0;
+        while (i < 400) {
+            push(self.genes, 3); // start with grass
+            i = i + 1;
+        }
+    }
+    
+    score = 0;
+    
+    count0 = 0; count1 = 0; count2 = 0; count3 = 0; count4 = 0; count5 = 0; count6 = 0;
+    
+    i = 0;
+    while (i < 400) {
+        t = self.genes[i];
+        x = i % 20;
+        y = i / 20;
+        
+        // count terrain types
+        if (t == 0) { count0 = count0 + 1; }
+        if (t == 1) { count1 = count1 + 1; }
+        if (t == 2) { count2 = count2 + 1; }
+        if (t == 3) { count3 = count3 + 1; }
+        if (t == 4) { count4 = count4 + 1; }
+        if (t == 5) { count5 = count5 + 1; }
+        if (t == 6) { count6 = count6 + 1; }
+        
+        // terrain can only be next to similar terrain
+        // check right neighbor
+        if (x < 19) {
+            n = self.genes[i + 1];
+            diff = t - n;
+            if (diff < 0) { diff = 0 - diff; }
+            
+            if (diff == 0) { 
+                score = score + 20; // same terrain = cluster
+            }
+            if (diff == 1) { 
+                score = score + 30; // adjacent terrain = smooth transition (best)
+            }
+            if (diff == 2) {
+                score = score + 5; // skip one level = okay
+            }
+            if (diff > 2) { 
+                score = score - 50; // big jump = not good! strong penalty
+            }
+        }
+        
+        // check bottom neighbor
+        if (y < 19) {
+            n = self.genes[i + 20];
+            diff = t - n;
+            if (diff < 0) { diff = 0 - diff; }
+            
+            if (diff == 0) { 
+                score = score + 20;
+            }
+            if (diff == 1) { 
+                score = score + 30;
+            }
+            if (diff == 2) {
+                score = score + 5;
+            }
+            if (diff > 2) { 
+                score = score - 50;
+            }
+        }
+        
+        // island shape bonus: water at edges, land in center
+        dx = x - 10;
+        dy = y - 10;
+        dist_sq = dx * dx + dy * dy;
+        
+        // inner circle (radius 5) should be land
+        if (dist_sq < 25) {
+            if (t >= 3) { score = score + 15; } // forest/hills/mountains in center
+        }
+        // middle ring: sand/grass transition
+        if (dist_sq >= 25 && dist_sq < 64) {
+            if (t >= 2 && t <= 4) { score = score + 10; } // sand/grass/forest
+        }
+        // outer ring: water
+        if (dist_sq > 81) {
+            if (t <= 1) { score = score + 15; } // water at edges
+        }
+        
+        i = i + 1;
+    }
+    
+    // diversity bonus: reward having multiple terrain types
+    types_present = 0;
+    if (count0 > 10) { types_present = types_present + 1; }
+    if (count1 > 10) { types_present = types_present + 1; }
+    if (count2 > 10) { types_present = types_present + 1; }
+    if (count3 > 10) { types_present = types_present + 1; }
+    if (count4 > 10) { types_present = types_present + 1; }
+    if (count5 > 5) { types_present = types_present + 1; }
+    if (count6 > 3) { types_present = types_present + 1; }
+    
+    score = score + types_present * 500;
+    
+    // extra bonus for natural elevation progression
+    if (count0 > 0 && count1 > 0) { score = score + 200; }
+    if (count1 > 0 && count2 > 0) { score = score + 200; }
+    if (count2 > 0 && count3 > 0) { score = score + 200; }
+    if (count3 > 0 && count4 > 0) { score = score + 200; }
+    if (count4 > 0 && count5 > 0) { score = score + 200; }
+    if (count5 > 0 && count6 > 0) { score = score + 200; }
+    
+    if (score < 0) { score = 0; }
+    return score;
+}
+
+MUTATE {
+    mutation: {
+        // mutations must respect adjacency - spread from existing terrain
+        changes = random(10, 30); 
+        i = 0;
+        while (i < changes) {
+            idx = random(0, 400);
+            current = self.genes[idx];
+            new_val = current;
+            
+            // 80% chance: step by 1 (smooth evolution)
+            // 20% chance: copy from a neighbor (spread existing biomes)
+            r = random(0, 10);
+            if (r < 8) {
+                // step mutation: +1 or -1
+                delta = random(0, 2) * 2 - 1; // -1 or +1
+                new_val = current + delta;
+            } else {
+                // copy from neighbor mutation
+                x = idx % 20;
+                y = idx / 20;
+                dir = random(0, 4);
+                nidx = idx;
+                if (dir == 0 && x > 0) { nidx = idx - 1; }
+                if (dir == 1 && x < 19) { nidx = idx + 1; }
+                if (dir == 2 && y > 0) { nidx = idx - 20; }
+                if (dir == 3 && y < 19) { nidx = idx + 20; }
+                new_val = self.genes[nidx];
+            }
+            
+            if (new_val < 0) { new_val = 0; }
+            if (new_val > 6) { new_val = 6; }
+            self.genes[idx] = new_val;
+            i = i + 1;
+        }
+    }
+}
+
+VISUALIZE {
+    // draw the 20x20 terrain map
+    cell_size = 15;
+    for target in environment {
+        i = 0;
+        while (i < 400) {
+            t = target.genes[i];
+            
+            // calculate screen coordinates
+            grid_x = i % 20;
+            grid_y = i / 20;
+            screen_x = 100 + grid_x * cell_size;
+            screen_y = 100 + grid_y * cell_size;
+            
+            // assign colors based on terrain type
+            r = 0; g = 0; b = 0;
+            
+            if (t == 0) { r = 20;  g = 60;  b = 180; } // deep water
+            if (t == 1) { r = 70;  g = 130; b = 200; } // shallow water
+            if (t == 2) { r = 240; g = 220; b = 130; } // sand
+            if (t == 3) { r = 80;  g = 180; b = 50;  } // grass
+            if (t == 4) { r = 20;  g = 100; b = 20;  } // forest
+            if (t == 5) { r = 139; g = 110; b = 80;  } // hills
+            if (t == 6) { r = 180; g = 180; b = 190; } // mountains
+            
+            draw_rect(screen_x, screen_y, cell_size, cell_size, r, g, b);
+            
+            i = i + 1;
+        }
+    }
+}
+
+EVOLVE {
+    generations: 2000,
+    instances: 30
+}

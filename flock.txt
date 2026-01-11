@@ -1,0 +1,206 @@
+// flocking simulation  
+// each bird has genes controlling: cohesion, separation, alignment weights
+// fitness rewards staying together as a flock without collisions
+
+ENVIRONMENT {
+    width: 40
+    height: 40
+    steps: 60
+}
+
+SPECIES {
+    ROUTINE bird_step {
+        // calculate flock center and average velocity
+        center_x = 0;
+        center_y = 0;
+        avg_vx = 0;
+        avg_vy = 0;
+        count = 0;
+        
+        // separation- avoid getting too close
+        sep_x = 0;
+        sep_y = 0;
+        
+        for other in environment {
+            if (other.x != self.x || other.y != self.y) {
+                dx = other.x - self.x;
+                dy = other.y - self.y;
+                adx = dx; if (adx < 0) { adx = 0 - adx; }
+                ady = dy; if (ady < 0) { ady = 0 - ady; }
+                dist = adx + ady;
+                
+                // only consider nearby birds
+                if (dist < 15) {
+                    center_x = center_x + other.x;
+                    center_y = center_y + other.y;
+                    avg_vx = avg_vx + other.vx;
+                    avg_vy = avg_vy + other.vy;
+                    count = count + 1;
+                    
+                    // separation force (avoid collisions)
+                    if (dist < 4 && dist > 0) {
+                        sep_x = sep_x - dx;
+                        sep_y = sep_y - dy;
+                    }
+                }
+            }
+        }
+        
+        // calculate steering forces
+        steer_x = 0;
+        steer_y = 0;
+        
+        if (count > 0) {
+            // cohesion: steer toward flock center
+            center_x = center_x / count;
+            center_y = center_y / count;
+            coh_x = (center_x - self.x) * self.cohesion / 100;
+            coh_y = (center_y - self.y) * self.cohesion / 100;
+            
+            // alignment: match flock velocity
+            avg_vx = avg_vx / count;
+            avg_vy = avg_vy / count;
+            ali_x = (avg_vx - self.vx) * self.alignment / 100;
+            ali_y = (avg_vy - self.vy) * self.alignment / 100;
+            
+            // separation: avoid collisions
+            sep_x = sep_x * self.separation / 100;
+            sep_y = sep_y * self.separation / 100;
+            
+            steer_x = coh_x + ali_x + sep_x;
+            steer_y = coh_y + ali_y + sep_y;
+        }
+        
+        // update velocity
+        self.vx = self.vx + steer_x;
+        self.vy = self.vy + steer_y;
+        
+        // clamp velocity
+        if (self.vx > 2) { self.vx = 2; }
+        if (self.vx < 0 - 2) { self.vx = 0 - 2; }
+        if (self.vy > 2) { self.vy = 2; }
+        if (self.vy < 0 - 2) { self.vy = 0 - 2; }
+        
+        // update position
+        self.x = self.x + self.vx;
+        self.y = self.y + self.vy;
+        
+        // wrap around edges
+        if (self.x < 0) { self.x = 39; }
+        if (self.x > 39) { self.x = 0; }
+        if (self.y < 0) { self.y = 39; }
+        if (self.y > 39) { self.y = 0; }
+    }
+
+    Bird {
+        vx: random(0, 3) - 1,
+        vy: random(0, 3) - 1,
+        cohesion: random(10, 50),
+        separation: random(20, 80),
+        alignment: random(10, 40),
+        routine: bird_step
+    }
+}
+
+SPAWN {
+    // 20 birds scattered across the environment
+    spawn Bird @ (5, 5);    spawn Bird @ (8, 12);   spawn Bird @ (3, 20);
+    spawn Bird @ (12, 8);   spawn Bird @ (15, 15);  spawn Bird @ (10, 25);
+    spawn Bird @ (20, 5);   spawn Bird @ (25, 10);  spawn Bird @ (22, 18);
+    spawn Bird @ (30, 8);   spawn Bird @ (35, 15);  spawn Bird @ (28, 22);
+    spawn Bird @ (5, 30);   spawn Bird @ (12, 35);  spawn Bird @ (18, 32);
+    spawn Bird @ (25, 28);  spawn Bird @ (32, 33);  spawn Bird @ (38, 25);
+    spawn Bird @ (15, 20);  spawn Bird @ (20, 25);
+}
+
+FITNESS {
+    // measure flock cohesion and collision avoidance
+    total_dist = 0;
+    collisions = 0;
+    pairs = 0;
+    
+    for bird1 in environment {
+        for bird2 in environment {
+            if (bird1.x != bird2.x || bird1.y != bird2.y) {
+                dx = bird1.x - bird2.x; if (dx < 0) { dx = 0 - dx; }
+                dy = bird1.y - bird2.y; if (dy < 0) { dy = 0 - dy; }
+                dist = dx + dy;
+                
+                total_dist = total_dist + dist;
+                pairs = pairs + 1;
+                
+                // count collisions (too close)
+                if (dist < 2) {
+                    collisions = collisions + 1;
+                }
+            }
+        }
+    }
+    
+    score = 0;
+    
+    if (pairs > 0) {
+        avg_dist = total_dist / pairs;
+        
+        // reward for staying together (lower average distance)
+        // ideal distance is around 5-10
+        if (avg_dist < 20) {
+            score = score + (20 - avg_dist) * 100;
+        }
+        
+        // penalize collisions heavily
+        score = score - collisions * 50;
+        
+        // bonus for tight but safe flocking
+        if (avg_dist > 3 && avg_dist < 12 && collisions < 5) {
+            score = score + 500;
+        }
+    }
+    
+    // ensure non-negative
+    if (score < 0) { score = 0; }
+    
+    return score;
+}
+
+MUTATE {
+    mutation: {
+        // evolve flocking parameters
+        self.cohesion = self.cohesion + random(0, 21) - 10;
+        self.separation = self.separation + random(0, 21) - 10;
+        self.alignment = self.alignment + random(0, 21) - 10;
+        
+        // clamp to valid ranges
+        if (self.cohesion < 5) { self.cohesion = 5; }
+        if (self.cohesion > 80) { self.cohesion = 80; }
+        if (self.separation < 10) { self.separation = 10; }
+        if (self.separation > 100) { self.separation = 100; }
+        if (self.alignment < 5) { self.alignment = 5; }
+        if (self.alignment > 60) { self.alignment = 60; }
+    }
+}
+
+VISUALIZE {
+    cell = 15; // 40 * 15 = 600
+    
+    // sky blue background
+    draw_rect(0, 0, 600, 600, 135, 206, 235);
+    
+    for bird in environment {
+        px = bird.x * cell;
+        py = bird.y * cell;
+        
+        // bird body (dark gray)
+        draw_circle(px + 7, py + 7, 5, 50, 50, 50);
+        
+        // direction indicator (beak pointing in velocity direction) - cute!
+        bx = px + 7 + bird.vx * 4;
+        by = py + 7 + bird.vy * 4;
+        draw_circle(bx, by, 2, 255, 165, 0);
+    }
+}
+
+EVOLVE {
+    generations: 500,
+    instances: 15
+}
